@@ -221,6 +221,134 @@ plt.show()
 ##A high TTR indicates a high degree of lexical variation while a low TTR indicates the opposite.
 ##
 ##
+
+
+def calculate_ttr(dataset):
+    ttrs = []
+    for index, row in dataset.iterrows():
+        text = row['abstract']
+        
+        tokens = word_tokenize(text.lower())
+        types = set(tokens) #create a set of unique tokens
+        
+        if len(tokens) == 0:
+            ttrs.append(None)
+        else:
+            #The TTR score is calculated by dividing the number of types by the total number of tokens.
+            ttr = len(types) / len(tokens)
+            ttrs.append(ttr)
+    
+    return ttrs
+
+def calculate_all_tokens(dataset):
+    all_tokens = []
+    for index, row in dataset.iterrows():
+        text = row['abstract']
+        tokens = word_tokenize(text.lower())
+        all_tokens.extend(tokens)
+    return all_tokens
+
+def calculate_all_tokens_ngrams(dataset, n):
+    all_ngrams = []
+    for index, row in dataset.iterrows():
+        text = row['abstract']
+        tokens = word_tokenize(text.lower())
+        text_ngrams = list(ngrams(tokens, n))
+        all_ngrams.extend(text_ngrams)
+
+    return all_ngrams
+
+
+
+def calculate_ttr_all_texts(dataset):
+    all_tokens = calculate_all_tokens(dataset)
+
+    types = set(all_tokens)  # Create a set of unique tokens from all texts
+
+    ttrs = []
+    for index, row in dataset.iterrows():
+        text = row['abstract']
+        tokens = word_tokenize(text.lower())
+
+        if len(tokens) == 0:
+            ttrs.append(None)
+        else:
+            unique_token_count = sum(1 for token in types if token in tokens)
+            ttr = unique_token_count / len(tokens)
+            ttrs.append(ttr)
+    
+    return ttrs
+
+def calculate_ttr_all_ngrams(dataset, n=2):
+    all_ngrams = calculate_all_tokens_ngrams(dataset, n)
+
+    types = set(all_ngrams)  # Create a set of unique n-grams from all texts
+
+    ttrs = []
+    for index, row in dataset.iterrows():
+        text = row['abstract']
+        tokens = word_tokenize(text.lower())
+        text_ngrams = list(ngrams(tokens, n))
+
+        if len(text_ngrams) == 0:
+            ttrs.append(None)
+        else:
+            unique_ngram_count = sum(1 for ngram in types if ngram in text_ngrams)
+            ttr = unique_ngram_count / len(text_ngrams)
+            ttrs.append(ttr)
+    
+    return ttrs
+
+def plot_ttr_histogram_ngrams(dataset, ai_generated, n=1):
+    if ai_generated:
+        color = 'red'
+        title = f'Type-Token Ratio Histogram (AI-Generated Abstracts) - ngram={n}'
+    else:
+        color = 'green'
+        title = f'Type-Token Ratio Histogram (Human-Generated Abstracts) - ngram={n}'
+
+    ttrs = calculate_ttr_all_ngrams(dataset, n=n)
+
+    plt.hist(ttrs, bins=20, color=color, edgecolor='black')
+    plt.title(title)
+    plt.xlabel('TTR')
+    plt.ylabel('Frequency')
+    plt.show()
+    
+def plot_ttr_histogram_tokens(dataset, ai_generated):
+    if ai_generated:
+        color = 'red'
+        title = f'Type-Token Ratio Histogram - tokens (AI-Generated Abstracts)'
+    else:
+        color = 'green'
+        title = f'Type-Token Ratio Histogram -tokens (Human-Generated Abstracts)'
+
+    ttrs = calculate_ttr_all_texts(dataset)
+
+    plt.hist(ttrs, bins=20, color=color, edgecolor='black')
+    plt.title(title)
+    plt.xlabel('TTR')
+    plt.ylabel('Frequency')
+    plt.show()    
+
+
+# Plotting
+
+human_abstracts = dataset.loc[dataset['is_ai_generated'] == False]
+ai_abstracts = dataset.loc[dataset['is_ai_generated'] == True]
+
+# Plot TTR histograms based on tokens
+plot_ttr_histogram_tokens(human_abstracts, ai_generated=False)
+plot_ttr_histogram_tokens(ai_abstracts, ai_generated=True)
+
+# Plot TTR histograms based on n-grams (1-5)
+for n in range(1, 6):
+    print(f"Plots for n-grams (n={n})")
+    plot_ttr_histogram_ngrams(human_abstracts, ai_generated=False, n=n)
+    plot_ttr_histogram_ngrams(ai_abstracts, ai_generated=True, n=n)
+
+
+
 # ------------------------------------------- SpaCy -------------------------------------------------------------#
 #cython: auto_pickle=False 
 #import sys; print(sys.implementation)
@@ -235,7 +363,6 @@ plt.show()
 #------------------------------------------------------ Modelling ---------------------------------------------------#
 
 import pandas as pd
-import numpy as np
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -244,18 +371,48 @@ from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import FunctionTransformer
-
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.dummy import DummyClassifier
+from sklearn.naive_bayes import MultinomialNB
+import string
+import re
+from nltk.corpus import stopwords
+#nltk.download('stopwords')
+from nltk.stem import WordNetLemmatizer
+#nltk.download('wordnet')
+#nltk.download('omw-1.4')
 
 # Function for text normalization
-def text_normalizer(texts):
+def text_normalizer(texts, lemmatize=True, remove_stopwords=True, remove_digits=True, remove_common=True):
+    # Initialize lemmatizer and stopwords
+    #lemmatizer = WordNetLemmatizer()
+    #stop_words = set(stopwords.words('english'))
+    custom_stopwords = ['a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what', 'when', 'where', 'how', 'why', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'will', 'would', 'should', 'can', 'could', 'may', 'might', 'must', 'ought', 'i', 'you', 'he', 'she', 'it', 'we', 'they']
     normalized_texts = []
     for text in texts:
         # Convert to lowercase
         text = text.lower()
+        
         # Remove punctuation
         text = text.translate(str.maketrans('', '', string.punctuation))
+        # Remove digits
+        if remove_digits:
+            text = re.sub(r'\d+', '', text)
+        # Lemmatize
+       # if lemmatize:
+        #    text = ' '.join([lemmatizer.lemmatize(word) for word in text.split()])
+        # Remove stopwords
+        if remove_stopwords:
+            words = text.split()
+            text = ' '.join([word for word in words if word not in custom_stopwords])
+        if remove_common: 
+            words = text.split()
+            most_common = [word for word, count in Counter(words).most_common(10)]
+            words = [word for word in words if word not in most_common]
+            text = ' '.join(words)
         normalized_texts.append(text)
     return normalized_texts
+
 
 # Split the data into training, validation, and testing sets
 X = dataset["abstract"]
@@ -263,6 +420,8 @@ y = dataset["is_ai_generated"]
 
 X_train, X_val_test, y_train, y_val_test = train_test_split(X, y, test_size=0.3, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_val_test, y_val_test, test_size=0.5, random_state=42)
+
+
 
 # Create a pipeline
 pipeline = Pipeline([
@@ -278,19 +437,31 @@ param_grid = [
         'tfidf__ngram_range': [(1, 1), (1, 2)],
         'classifier': [LogisticRegression()],
         'classifier__C': [0.1, 1, 10],
-        'classifier__penalty': ['l1', 'l2']
+        'classifier__penalty': ['l2'],
     },
     {
         'tfidf__max_df': [0.9, 1.0],
         'tfidf__ngram_range': [(1, 1), (1, 2)],
         'classifier': [RandomForestClassifier()],
         'classifier__n_estimators': [50, 100, 200],
-        'classifier__max_depth': [None, 10, 20]
+        'classifier__max_depth': [None, 10, 20],
+    },
+    {
+        'tfidf__max_df': [0.9, 1.0],
+        'tfidf__ngram_range': [(1, 1), (1, 2)],
+        'classifier': [DummyClassifier()],
+        'classifier__strategy': ['stratified', 'most_frequent', 'uniform']
+    },
+    {
+        'tfidf__max_df': [0.9, 1.0],
+        'tfidf__ngram_range': [(1, 1), (1, 2)],
+        'classifier': [MultinomialNB()],
+        'classifier__alpha': [0.1, 1, 10],
     }
 ]
 
 # Perform a grid search with cross-validation #high presision
-grid_search = GridSearchCV(pipeline, param_grid, scoring='accuracy', cv=5, n_jobs=-1)
+grid_search = GridSearchCV(pipeline, param_grid, scoring='f1', cv=5, n_jobs=-1)
 grid_search.fit(X_train, y_train)
 
 # Print the best combination of hyperparameters
@@ -303,6 +474,83 @@ print("Validation Classification Report:\n", classification_report(y_train, y_tr
 # Evaluate the model on  data
 y_val_pred = grid_search.predict(X_val)
 print("Validation Classification Report:\n", classification_report(y_val, y_val_pred))
+
+results = grid_search.cv_results_
+# Initialize empty lists for each model
+rf_params = []
+lr_params = []
+dummy_params = []
+Multi_params = []
+
+# Loop over each set of parameters in the GridSearchCV results
+for i, params in enumerate(results["params"]):
+    if isinstance(params["classifier"], RandomForestClassifier):
+        # Add the best parameters for the Random Forest model to the list
+        best_params = {"params": params, "mean_test_score": results["mean_test_score"][i]}
+        rf_params.append(best_params)
+    elif isinstance(params["classifier"], LogisticRegression):
+        # Add the best parameters for the Logistic Regression model to the list
+        best_params = {"params": params, "mean_test_score": results["mean_test_score"][i]}
+        lr_params.append(best_params)
+    elif isinstance(params["classifier"], DummyClassifier):
+        # Add the best parameters for the Dummy Classifier model to the list
+        best_params = {"params": params, "mean_test_score": results["mean_test_score"][i]}
+        dummy_params.append(best_params)
+    elif isinstance(params["classifier"], MultinomialNB):
+        # Add the best parameters for the Dummy Classifier model to the list
+        best_params = {"params": params, "mean_test_score": results["mean_test_score"][i]}
+        Multi_params.append(best_params)
+
+# Sort the best parameters by mean test score in descending order
+rf_params = sorted(rf_params, key=lambda x: x["mean_test_score"], reverse=True)[:1]
+lr_params = sorted(lr_params, key=lambda x: x["mean_test_score"], reverse=True)[:1]
+dummy_params = sorted(dummy_params, key=lambda x: x["mean_test_score"], reverse=True)[:1]
+Multi_params = sorted(Multi_params, key=lambda x: x["mean_test_score"], reverse=True)[:1]
+
+# Create a DataFrame with the best parameters for each model
+best_params_df = pd.DataFrame({
+    "model": ["Random Forest", "Logistic Regression", "Dummy Classifier", "MultinomialNB"],
+    "best_params": [rf_params[0]["params"], lr_params[0]["params"], dummy_params[0]["params"],Multi_params[0]["params"]],
+    "mean_test_score": [rf_params[0]["mean_test_score"], lr_params[0]["mean_test_score"], dummy_params[0]["mean_test_score"], Multi_params[0]["mean_test_score"]]
+})
+
+print(best_params_df)
+
+best_estimator = grid_search.best_estimator_
+print(best_estimator.named_steps['classifier'])
+
+# Extract the feature importances from the Random Forest Classifier
+if isinstance(best_estimator.named_steps['classifier'], RandomForestClassifier):
+    rf = best_estimator.named_steps['classifier']
+    feature_importances = pd.Series(rf.feature_importances_, index=best_estimator.named_steps['tfidf'].get_feature_names_out())
+    feature_importances.nlargest(20).plot(kind='barh')
+
+if isinstance(best_estimator.named_steps['classifier'], LogisticRegression):
+    lr = best_estimator.named_steps['classifier']
+    feature_importances = pd.Series(lr.coef_[0], index=best_estimator.named_steps['tfidf'].get_feature_names_out())
+    feature_importances.nlargest(20).plot(kind='barh')
+
+if isinstance(best_estimator.named_steps['classifier'], MultinomialNB):
+    nb = best_estimator.named_steps['classifier']
+    feature_probabilities = pd.DataFrame(nb.feature_log_prob_.T, columns=['class_0', 'class_1'], index=best_estimator.named_steps['tfidf'].get_feature_names_out())
+    feature_probabilities['diff'] = feature_probabilities['class_1'] - feature_probabilities['class_0']
+    feature_probabilities.nlargest(20, 'diff').plot(kind='barh')
+
+if isinstance(best_estimator.named_steps['classifier'], DummyClassifier):
+    feature_importances = pd.Series([1], index=['dummy'])
+    feature_importances.plot(kind='barh')
+    
+    
+
+
+
+
+
+
+
+    
+#--------------------------Distilbert-----------------------------------------------#
+
 
 
 from sklearn.metrics import classification_report
@@ -329,24 +577,28 @@ print(train_dataset)
 
 # Tokenize the input text
 def tokenize(batch):
-    return tokenizer(batch['abstract'], padding='max_length', truncation=True, max_length=512, return_tensors='pt')
+    return {
+        **tokenizer(batch['abstract'], padding='max_length', truncation=True, max_length=512, return_tensors='pt'),
+        'labels': batch['is_ai_generated']
+    }
 
 
-train_dataset = train_dataset.map(tokenize, batched=True, remove_columns=['abstract', 'ai_generated', 'is_ai_generated'])
-val_dataset = val_dataset.map(tokenize, batched=True, remove_columns=['abstract', 'ai_generated', 'is_ai_generated'])
-test_dataset = test_dataset.map(tokenize, batched=True, remove_columns=['abstract', 'ai_generated', 'is_ai_generated'])
+
+train_dataset = train_dataset.map(tokenize, batched=True, remove_columns=['abstract', 'ai_generated'])
+val_dataset = val_dataset.map(tokenize, batched=True, remove_columns=['abstract', 'ai_generated'])
+test_dataset = test_dataset.map(tokenize, batched=True, remove_columns=['abstract', 'ai_generated'])
 
 # Set the dataset format to PyTorch tensors
-train_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'is_ai_generated'])
-val_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'is_ai_generated'])
-test_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'is_ai_generated'])
+train_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'labels'])
+val_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'labels'])
+test_dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'labels'])
 
 # Create the training arguments
 training_args = TrainingArguments(
     output_dir="./results",
     num_train_epochs=3,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
+    per_device_train_batch_size=1,
+    per_device_eval_batch_size=1,
     warmup_steps=500,
     weight_decay=0.01,
     logging_dir="./logs",
@@ -370,13 +622,6 @@ trainer.train()
 val_predictions = trainer.predict(val_dataset)
 val_preds = np.argmax(val_predictions.predictions, axis=1)
 print("Validation Classification Report:\n", classification_report(y_val, val_preds))
-
-# Create a classification pipeline for inference
-text_classification_pipeline = TextClassificationPipeline(model=model, tokenizer=tokenizer)
-
-# Evaluate the model on test data
-y_pred = [np.argmax(pred['score']) for pred in text_classification_pipeline(list(X_test))]
-print("Test Classification Report:\n", classification_report(y_test, y_pred))
 
 
 
